@@ -2,8 +2,12 @@ package com.brusdev.camcar;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Matrix;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -12,15 +16,34 @@ import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.os.Handler;
+import android.util.DisplayMetrics;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.TextView;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+import x1.Studio.Core.IVideoDataCallBack;
+import x1.Studio.Core.OnlineService;
 
 /**
  * An example full-screen activity that shows and hides the system UI (i.e.
  * status bar and navigation/system bar) with user interaction.
  */
-public class ControlActivity extends AppCompatActivity implements SensorEventListener {
+public class ControlActivity extends AppCompatActivity implements SensorEventListener, SurfaceHolder.Callback,
+        IVideoDataCallBack {
     /**
      * Whether or not the system UI should be auto-hidden after
      * {@link #AUTO_HIDE_DELAY_MILLIS} milliseconds.
@@ -40,8 +63,43 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private static final int UI_ANIMATION_DELAY = 300;
 
     private TextView mContentView;
-    private View mControlsView;
     private boolean mVisible;
+
+    private OnlineService ons;
+    public static boolean isInitLan = false;
+    private Bitmap VideoBit;
+    private boolean VideoInited = false;
+    private Rect RectOfRegion;
+    private RectF RectOfScale;
+    private Matrix rotator;
+    private int Width;
+    private int Height;
+    private SurfaceView mSurfaceView;
+    private SurfaceHolder mSurfaceHolder;
+    private DevInfo devInfo;
+    private String callID;
+
+
+    private Thread thread;
+    private Socket tcSocket;
+    private byte[] tcBuffer;
+    private Charset charset;
+    private InputStream tcInputStream;
+    private OutputStream tcOutputStream;
+
+    private boolean stop;
+    private boolean go_forward;
+    private boolean go_backward;
+    private boolean turn_left;
+    private boolean turn_right;
+    private Runnable stop_run;
+    private Runnable go_forward_run;
+    private Runnable go_backward_run;
+    private Runnable turn_left_run;
+    private Runnable turn_right_run;
+    private ThreadPoolExecutor threadPoolExecutor;
+    private BlockingDeque<Runnable> threadWorkQueue;
+
 
     private SensorManager mSensorManager;
     private Sensor mASensor;
@@ -59,9 +117,27 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
         setContentView(R.layout.activity_control);
 
+        ons = OnlineService.getInstance();
+        ons.setCallBackData(this);
+
+        if (!isInitLan) {
+            isInitLan = true;
+            ons.initLan(); //��ʼ��������;
+
+        }
+
+        mSurfaceView = (SurfaceView) findViewById(R.id.surfaceView_video);
+        mSurfaceHolder = mSurfaceView.getHolder();
+        mSurfaceHolder.addCallback(this);
+
+        ons.regionAudioDataServer();
+        ons.regionVideoDataServer();
+
+        devInfo = new DevInfo();
+
+
         mVisible = true;
-        mControlsView = findViewById(R.id.fullscreen_content_controls);
-        mContentView = (TextView)findViewById(R.id.fullscreen_content);
+        mContentView = (TextView) findViewById(R.id.fullscreen_content);
 
 
         // Set up the user interaction to manually show or hide the system UI.
@@ -90,11 +166,167 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mASensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         mMSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+
+        this.charset = Charset.forName("US-ASCII");
+        this.tcBuffer = new byte[128];
+
+        go_forward = false;
+        go_backward = false;
+        turn_left = false;
+        turn_right = false;
+
+        stop_run = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("0");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        go_forward_run = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("1");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        go_backward_run = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("2");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        turn_left_run = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("3");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        turn_right_run = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("4");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        this.threadWorkQueue = new LinkedBlockingDeque<>();
+        this.threadPoolExecutor = new ThreadPoolExecutor(
+                1,
+                1,
+                1,
+                TimeUnit.SECONDS,
+                this.threadWorkQueue);
+
+
+        this.start();
+    }
+
+    private void start()
+    {
+        this.thread = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                ControlActivity.this.run();
+            }
+        });
+
+        this.thread.start();
+    }
+
+    private void run()
+    {
+        try {
+
+            /*
+            this.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    progress_label.setText("connecting...");
+                }
+            });
+            */
+
+            this.tcSocket = null;
+
+            while (this.tcSocket == null) {
+                try
+                {
+                    this.tcSocket = new Socket();
+                    this.tcSocket.setSoTimeout(3000);
+
+                    this.tcSocket.connect(new InetSocketAddress(InetAddress.getByName("192.168.4.1"), 9003));
+                }
+                catch (Exception socketException) {
+                    socketException.printStackTrace();
+
+                    this.tcSocket = null;
+                }
+            }
+
+            /*
+            this.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    progress_view.setVisibility(View.GONE);
+                }
+            });
+            */
+
+
+            tcInputStream = this.tcSocket.getInputStream();
+            tcOutputStream = this.tcSocket.getOutputStream();
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+        }
+    }
+
+    private String sendCommand(String command) throws  Exception {
+
+        int readBytes;
+
+        synchronized (this.tcBuffer) {
+
+            tcOutputStream.write(command.getBytes(charset));
+
+            readBytes = tcInputStream.read(this.tcBuffer, 0, this.tcBuffer.length);
+
+            while(readBytes < 2 || this.tcBuffer[readBytes - 2] != '\r' || this.tcBuffer[readBytes - 1] != '\n') {
+
+                readBytes = readBytes + tcInputStream.read(this.tcBuffer, readBytes, this.tcBuffer.length - readBytes);
+            }
+
+            return new String(this.tcBuffer, 0, readBytes - 2, charset);
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+
+        ons.setCallBackData(this);
 
         // Get updates from the accelerometer and magnetometer at a constant rate.
         // To make batch operations more efficient and reduce power consumption,
@@ -115,6 +347,8 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
         // Don't receive any more updates from either sensor.
         mSensorManager.unregisterListener(this);
+
+        this.finish();
     }
 
     @Override
@@ -123,8 +357,7 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
             System.arraycopy(event.values, 0, mAccelerometerReading,
                     0, mAccelerometerReading.length);
             updateOrientationAngles();
-        }
-        else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
+        } else if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
             System.arraycopy(event.values, 0, mMagnetometerReading,
                     0, mMagnetometerReading.length);
             updateOrientationAngles();
@@ -149,6 +382,31 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
         // "mOrientationAngles" now has up-to-date information.
 
+        if (mOrientationAngles[1] > 0.15) {
+            if (!turn_left) {
+                stop = false;
+                turn_left = true;
+                threadPoolExecutor.execute(turn_left_run);
+            }
+        } else if (mOrientationAngles[1] < -0.15) {
+            if (!turn_right) {
+                stop = false;
+                turn_right = true;
+                threadPoolExecutor.execute(turn_right_run);
+            }
+        } else {
+            if (go_forward) {
+                threadPoolExecutor.execute(go_forward_run);
+            } else if (go_backward) {
+                threadPoolExecutor.execute(go_backward_run);
+            } else if (!stop){
+                stop = true;
+                turn_left = false;
+                turn_right = false;
+                threadPoolExecutor.execute(stop_run);
+            }
+        }
+
         mSensorHandler.removeCallbacks(mSensorRunnable);
         mSensorHandler.post(mSensorRunnable);
     }
@@ -171,13 +429,23 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private final View.OnTouchListener mDelayHideTouchListener = new View.OnTouchListener() {
         @Override
         public boolean onTouch(View view, MotionEvent motionEvent) {
-            switch(motionEvent.getAction()){
+            switch (motionEvent.getAction()) {
                 case MotionEvent.ACTION_DOWN:
                     if (view.getId() == R.id.backward_fab) {
                         mBackwardDown = true;
+                        if (!go_backward) {
+                            stop = false;
+                            go_backward = true;
+                            threadPoolExecutor.execute(go_backward_run);
+                        }
                     }
                     if (view.getId() == R.id.forward_fab) {
                         mForwardDown = true;
+                        if (!go_forward) {
+                            stop = false;
+                            go_forward = true;
+                            threadPoolExecutor.execute(go_forward_run);
+                        }
                     }
 
                     // touch down code
@@ -192,9 +460,19 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                 case MotionEvent.ACTION_UP:
                     if (view.getId() == R.id.backward_fab) {
                         mBackwardDown = false;
+                        go_backward = false;
+                        if (!stop && !turn_left && !turn_right){
+                            stop = true;
+                            threadPoolExecutor.execute(stop_run);
+                        }
                     }
                     if (view.getId() == R.id.forward_fab) {
                         mForwardDown = false;
+                        go_forward = false;
+                        if (!stop && !turn_left && !turn_right){
+                            stop = true;
+                            threadPoolExecutor.execute(stop_run);
+                        }
                     }
 
                     // touch up code
@@ -228,7 +506,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         if (actionBar != null) {
             actionBar.hide();
         }
-        mControlsView.setVisibility(View.GONE);
         mVisible = false;
 
         // Schedule a runnable to remove the status and navigation bar after a delay
@@ -251,6 +528,8 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+
+            System.out.println(ons.refreshLan());
         }
     };
 
@@ -274,7 +553,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
             if (actionBar != null) {
                 actionBar.show();
             }
-            mControlsView.setVisibility(View.VISIBLE);
         }
     };
 
@@ -296,7 +574,7 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                     mOrientationAngles[2],
                     mForwardDown ? "fd" : "fu",
                     mBackwardDown ? "bd" : "bu"
-                    ));
+            ));
         }
     };
 
@@ -307,5 +585,131 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private void delayedHide(int delayMillis) {
         mHideHandler.removeCallbacks(mHideRunnable);
         mHideHandler.postDelayed(mHideRunnable, delayMillis);
+    }
+
+    private void initPlayer(int mFrameWidth, int mFrameHeight) {
+
+        VideoInited = true;
+
+        VideoBit = Bitmap.createBitmap(mFrameWidth, mFrameHeight,
+                Bitmap.Config.RGB_565);
+        DisplayMetrics dm = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(dm);
+        this.Width = dm.widthPixels;
+        this.Height = dm.heightPixels;
+
+        // int Left = (this.Width - this.mFrameWidth) / 2;
+        int Top = 0;
+        int myHight = this.Height;
+        int myWidth = (int) (mFrameWidth * (Double.valueOf(this.Height) / Double
+                .valueOf(mFrameHeight)));
+        int Left = (this.Width - myWidth) / 2;
+        this.RectOfRegion = null;
+        // this.RectOfScale = new RectF(Left, Top, Left + myWidth, myHight);
+        this.RectOfScale = new RectF(0, 0, mSurfaceView.getHeight(), mSurfaceView.getWidth());
+    }
+
+    @Override
+    public void OnCallbackFunForDataServer(String CallId, ByteBuffer Buf,
+                                           int mFrameWidth, int mFrameHeight, int mEncode, int mTime) {
+
+        if (!VideoInited) {
+            initPlayer(mFrameWidth, mFrameHeight);
+
+        }
+
+        this.VideoBit.copyPixelsFromBuffer(Buf);
+        try {
+            Canvas canvas = mSurfaceHolder.lockCanvas(null);
+
+            try {
+                canvas.save();
+                canvas.rotate(90, this.RectOfScale.width() / 2, this.RectOfScale.height() / 2);
+                canvas.translate((this.RectOfScale.width() - this.RectOfScale.height()) / 2,
+                        (this.RectOfScale.width() - this.RectOfScale.height()) / 2);
+                canvas.drawColor(Color.BLACK);
+                canvas.drawBitmap(this.VideoBit, this.RectOfRegion,
+                        this.RectOfScale, null);
+                canvas.restore();
+            } finally {
+                this.mSurfaceHolder.unlockCanvasAndPost(canvas);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public void OnCallbackFunForUnDecodeDataServer(String var1, byte[] var2, int var3, int var4, int var5, int var6, int var7) {
+
+    }
+
+    @Override
+    public void OnCallbackFunForLanDate(String devid, String videoType, int hkid, int channal, int status, String audioType) {
+        if (devid.equals("302")) {
+            return;
+        }
+
+        devInfo.setDevid(devid);
+        devInfo.setVideoType(videoType);
+        devInfo.setHkid(hkid);
+        devInfo.setChannal(channal);
+        devInfo.setStats(status);
+        devInfo.setAudioType(audioType);
+        devInfo.setType(0);
+
+        callID = ons.callLanVideo(devInfo.getDevid(),
+                devInfo.getHkid(), devInfo.getVideoType(),
+                devInfo.getChannal(), 0);
+
+    }
+
+    @Override
+    public void OnCallbackFunForRegionMonServer(int iFlag) {
+
+    }
+
+    @Override
+    public void OnCallbackFunForComData(int Type, int Result,
+                                        int AttachValueBufSize, String AttachValueBuf) {
+
+    }
+
+    @Override
+    public void OnCallbackFunForGetItem(byte[] byteArray, int result) {
+
+    }
+
+    @Override
+    public void OnCallbackFunForIPRateData(String Ip) {
+
+    }
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+
+    }
+
+
+    @Override
+    protected void onDestroy() {
+        if (callID != null) {
+            ons.closeLanVideo(callID);
+        }
+
+        // ons.quitSysm();
+
+        super.onDestroy();
     }
 }
