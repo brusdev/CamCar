@@ -21,7 +21,9 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.widget.CompoundButton;
 import android.widget.TextView;
+import android.widget.ToggleButton;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -88,13 +90,18 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private OutputStream tcOutputStream;
 
     private boolean stop;
+    private boolean enabled;
     private boolean go_forward;
     private boolean go_backward;
     private boolean turn_left;
     private boolean turn_right;
     private Runnable stop_run;
     private Runnable go_forward_run;
+    private Runnable go_forward_left;
+    private Runnable go_forward_right;
     private Runnable go_backward_run;
+    private Runnable go_backward_left;
+    private Runnable go_backward_right;
     private Runnable turn_left_run;
     private Runnable turn_right_run;
     private ThreadPoolExecutor threadPoolExecutor;
@@ -104,8 +111,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private SensorManager mSensorManager;
     private Sensor mASensor;
     private Sensor mMSensor;
-    private boolean mBackwardDown;
-    private boolean mForwardDown;
     private final float[] mAccelerometerReading = new float[3];
     private final float[] mMagnetometerReading = new float[3];
     private final float[] mRotationMatrix = new float[9];
@@ -148,20 +153,34 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
             }
         });
 
-        // Upon interacting with UI controls, delay any scheduled hide()
-        // operations to prevent the jarring behavior of controls going away
-        // while interacting with the UI.
+        enabled = false;
+
         findViewById(R.id.forward_fab).setOnTouchListener(mDelayHideTouchListener);
         findViewById(R.id.backward_fab).setOnTouchListener(mDelayHideTouchListener);
 
+        ((ToggleButton) findViewById(R.id.camera_tb)).
+                setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                        if (callID != null) {
+                            ons.closeLanVideo(callID);
+                        }
 
-        /*
-        findViewById(R.id.fab_go).setBackgroundTintList(
-                ColorStateList.valueOf(Color.GREEN));
+                        if (isChecked) {
+                            System.out.println(ons.refreshLan());
+                        }
+                    }
+                });
 
-        findViewById(R.id.fab_stop).setBackgroundTintList(
-                ColorStateList.valueOf(Color.RED));
-                */
+        ((ToggleButton) findViewById(R.id.engine_tb)).
+                setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+                    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                        if (enabled && !isChecked) {
+                            threadPoolExecutor.execute(stop_run);
+                        }
+
+                        enabled = isChecked;
+                    }
+                });
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mASensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
@@ -197,11 +216,55 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                 }
             }
         };
+        go_forward_left = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("6");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        go_forward_right = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("7");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
         go_backward_run = new Runnable() {
             @Override
             public void run() {
                 try {
                     sendCommand("2");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        go_backward_left = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("8");
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
+                }
+            }
+        };
+        go_backward_right = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    sendCommand("9");
                 } catch (Exception e) {
                     e.printStackTrace();
                     //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
@@ -382,33 +445,62 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
         // "mOrientationAngles" now has up-to-date information.
 
-        if (mOrientationAngles[1] > 0.15) {
-            if (!turn_left) {
-                stop = false;
-                turn_left = true;
-                threadPoolExecutor.execute(turn_left_run);
-            }
-        } else if (mOrientationAngles[1] < -0.15) {
-            if (!turn_right) {
-                stop = false;
-                turn_right = true;
-                threadPoolExecutor.execute(turn_right_run);
-            }
-        } else {
-            if (go_forward) {
-                threadPoolExecutor.execute(go_forward_run);
-            } else if (go_backward) {
-                threadPoolExecutor.execute(go_backward_run);
-            } else if (!stop){
-                stop = true;
-                turn_left = false;
-                turn_right = false;
-                threadPoolExecutor.execute(stop_run);
+        if (enabled) {
+            if (mOrientationAngles[1] > 0.15) {
+                if (!turn_left) {
+                    stop = false;
+                    turn_left = true;
+                    turn_right = false;
+                    updateEngine();
+                }
+            } else if (mOrientationAngles[1] < -0.15) {
+                if (!turn_right) {
+                    stop = false;
+                    turn_left = false;
+                    turn_right = true;
+                    updateEngine();
+                }
+            } else {
+                if (turn_left || turn_right) {
+                    stop = !go_forward && ! go_backward;
+                    turn_left = false;
+                    turn_right = false;
+                    updateEngine();
+                }
             }
         }
 
+
         mSensorHandler.removeCallbacks(mSensorRunnable);
         mSensorHandler.post(mSensorRunnable);
+    }
+
+    private void updateEngine() {
+        if (go_forward) {
+            if (turn_left) {
+                threadPoolExecutor.execute(go_forward_left);
+            } else if (turn_right) {
+                threadPoolExecutor.execute(go_forward_right);
+            } else {
+                threadPoolExecutor.execute(go_forward_run);
+            }
+        } else if (go_backward) {
+            if (turn_left) {
+                threadPoolExecutor.execute(go_backward_left);
+            } else if (turn_right) {
+                threadPoolExecutor.execute(go_backward_right);
+            } else {
+                threadPoolExecutor.execute(go_backward_run);
+            }
+        } else {
+            if (turn_left) {
+                threadPoolExecutor.execute(turn_left_run);
+            } else if (turn_right) {
+                threadPoolExecutor.execute(turn_right_run);
+            } else {
+                threadPoolExecutor.execute(stop_run);
+            }
+        }
     }
 
     @Override
@@ -432,19 +524,19 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
             switch (motionEvent.getAction()) {
                 case MotionEvent.ACTION_DOWN:
                     if (view.getId() == R.id.backward_fab) {
-                        mBackwardDown = true;
-                        if (!go_backward) {
+                        if (enabled && !go_backward) {
                             stop = false;
                             go_backward = true;
-                            threadPoolExecutor.execute(go_backward_run);
+                            go_forward = false;
+                            updateEngine();
                         }
                     }
                     if (view.getId() == R.id.forward_fab) {
-                        mForwardDown = true;
-                        if (!go_forward) {
+                        if (enabled && !go_forward) {
                             stop = false;
+                            go_backward = false;
                             go_forward = true;
-                            threadPoolExecutor.execute(go_forward_run);
+                            updateEngine();
                         }
                     }
 
@@ -459,19 +551,17 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
                 case MotionEvent.ACTION_UP:
                     if (view.getId() == R.id.backward_fab) {
-                        mBackwardDown = false;
-                        go_backward = false;
-                        if (!stop && !turn_left && !turn_right){
-                            stop = true;
-                            threadPoolExecutor.execute(stop_run);
+                        if (enabled && go_backward) {
+                            stop = !go_forward && !turn_left && !turn_right;
+                            go_backward = false;
+                            updateEngine();
                         }
                     }
                     if (view.getId() == R.id.forward_fab) {
-                        mForwardDown = false;
-                        go_forward = false;
-                        if (!stop && !turn_left && !turn_right){
-                            stop = true;
-                            threadPoolExecutor.execute(stop_run);
+                        if (enabled && go_forward) {
+                            stop = !go_backward && !turn_left && !turn_right;
+                            go_forward = false;
+                            updateEngine();
                         }
                     }
 
@@ -528,8 +618,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                     | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                     | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
-
-            System.out.println(ons.refreshLan());
         }
     };
 
@@ -568,13 +656,7 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private final Runnable mSensorRunnable = new Runnable() {
         @Override
         public void run() {
-            mContentView.setText(String.format("%.02f / %.02f / %.02f %s %s",
-                    mOrientationAngles[0],
-                    mOrientationAngles[1],
-                    mOrientationAngles[2],
-                    mForwardDown ? "fd" : "fu",
-                    mBackwardDown ? "bd" : "bu"
-            ));
+            mContentView.setText(String.format("%.02f", mOrientationAngles[1]));
         }
     };
 

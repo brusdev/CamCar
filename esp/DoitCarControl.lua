@@ -41,6 +41,7 @@ ip_cfg.ip="192.168.4.1";
 ip_cfg.netmask="255.255.255.0";
 ip_cfg.gateway="192.168.4.1";
 
+--wifi.setmode(wifi.SOFTAP)
 wifi.setmode(wifi.STATIONAP)
 wifi.ap.config(cfg)
 wifi.ap.setip(ip_cfg);
@@ -105,37 +106,61 @@ s:listen(9003,function(c)
 		stopFlag = true;
         c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="1" then --forward
+		spdTargetA=1023
+		spdTargetB=1023
 		gpio.write(3,gpio.HIGH)
 		gpio.write(4,gpio.HIGH)
 		stopFlag = false;
 		c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="2" then --backward
+		spdTargetA=1023
+		spdTargetB=1023
 		gpio.write(3,gpio.LOW)
 		gpio.write(4,gpio.LOW)
 		stopFlag = false;
 		c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="3" then --left
+		spdTargetA=1023
+		spdTargetB=1023
 		gpio.write(3,gpio.LOW)
 		gpio.write(4,gpio.HIGH)
 		stopFlag = false;
 		c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="4" then --right
+		spdTargetA=1023
+		spdTargetB=1023
 		gpio.write(3,gpio.HIGH);
 		gpio.write(4,gpio.LOW);
 		stopFlag = false;
 		c:send("ok\r\n");
-	  elseif string.sub(d,1,1)=="6" then --A spdUp
-		spdTargetA = spdTargetA+50;if(spdTargetA>1023) then spdTargetA=1023;end
+	  elseif string.sub(d,1,1)=="6" then --forward left
+		spdTargetA=1023
+		spdTargetB=128
+		gpio.write(3,gpio.HIGH)
+		gpio.write(4,gpio.HIGH)
+		stopFlag = false;
 		c:send("ok\r\n");
-	  elseif string.sub(d,1,1)=="7" then --A spdDown
-		spdTargetA = spdTargetA-50;if(spdTargetA<0) then spdTargetA=0;end
+	  elseif string.sub(d,1,1)=="7" then --forward right
+		spdTargetA=128
+		spdTargetB=1023
+		gpio.write(3,gpio.HIGH)
+		gpio.write(4,gpio.HIGH)
+		stopFlag = false;
 		c:send("ok\r\n");
-	  elseif string.sub(d,1,1)=="8" then --B spdUp
-		spdTargetB = spdTargetB+50;if(spdTargetB>1023) then spdTargetB=1023;end
+	  elseif string.sub(d,1,1)=="8" then --backward left
+		spdTargetA=1023
+		spdTargetB=128
+		gpio.write(3,gpio.LOW)
+		gpio.write(4,gpio.LOW)
+		stopFlag = false;
 		c:send("ok\r\n");
-	  elseif string.sub(d,1,1)=="9" then --B spdDown
-		spdTargetB = spdTargetB-50;if(spdTargetB<0) then spdTargetB=0;end
-		c:send("ok\r\n");		
+	  elseif string.sub(d,1,1)=="9" then --backward right
+		spdTargetA=128
+		spdTargetB=1023
+		gpio.write(3,gpio.LOW)
+		gpio.write(4,gpio.LOW)
+		stopFlag = false;
+		c:send("ok\r\n");
       else  print("Invalid Command:"..d);c:send("Invalid CMD\r\n");end;
 	  collectgarbage();
     end) --end c:on receive
