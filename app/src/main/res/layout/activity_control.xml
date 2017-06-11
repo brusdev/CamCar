@@ -17,6 +17,13 @@
         android:id="@+id/camera_tb"
         android:layout_gravity="left|top" />
 
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Refresh"
+        android:id="@+id/refresh_tb"
+        android:layout_gravity="center_horizontal|top" />
+
     <ToggleButton
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

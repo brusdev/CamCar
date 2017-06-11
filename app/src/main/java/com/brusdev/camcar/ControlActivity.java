@@ -21,6 +21,7 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.TextView;
 import android.widget.ToggleButton;
@@ -163,13 +164,24 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                     public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                         if (callID != null) {
                             ons.closeLanVideo(callID);
+                            devInfo.setHkid(0);
+                            callID = null;
                         }
 
                         if (isChecked) {
-                            System.out.println(ons.refreshLan());
+                            callID = ons.callLanVideo(devInfo.getDevid(),
+                                    devInfo.getHkid(), devInfo.getVideoType(),
+                                    devInfo.getChannal(), 0);
                         }
                     }
                 });
+
+        ((Button) findViewById(R.id.refresh_tb)).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                System.out.println(ons.refreshLan());
+            }
+        });
 
         ((ToggleButton) findViewById(R.id.engine_tb)).
                 setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -320,6 +332,7 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private void run()
     {
         try {
+
 
             /*
             this.runOnUiThread(new Runnable() {
@@ -656,7 +669,11 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private final Runnable mSensorRunnable = new Runnable() {
         @Override
         public void run() {
-            mContentView.setText(String.format("%.02f", mOrientationAngles[1]));
+            if (callID != null) {
+                mContentView.setText(String.format("%d/%s - %.02f", devInfo.getHkid(), callID, mOrientationAngles[1]));
+            } else {
+                mContentView.setText(String.format("%d - %.02f", devInfo.getHkid(), mOrientationAngles[1]));
+            }
         }
     };
 
@@ -740,10 +757,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         devInfo.setStats(status);
         devInfo.setAudioType(audioType);
         devInfo.setType(0);
-
-        callID = ons.callLanVideo(devInfo.getDevid(),
-                devInfo.getHkid(), devInfo.getVideoType(),
-                devInfo.getChannal(), 0);
 
     }
 

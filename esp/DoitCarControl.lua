@@ -120,28 +120,28 @@ s:listen(9003,function(c)
 		stopFlag = false;
 		c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="3" then --left
-		spdTargetA=1023
-		spdTargetB=1023
-		gpio.write(3,gpio.LOW)
-		gpio.write(4,gpio.HIGH)
-		stopFlag = false;
-		c:send("ok\r\n");
+        spdTargetA=1023
+        spdTargetB=1023
+        gpio.write(3,gpio.HIGH);
+        gpio.write(4,gpio.LOW);
+        stopFlag = false;
+        c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="4" then --right
-		spdTargetA=1023
-		spdTargetB=1023
-		gpio.write(3,gpio.HIGH);
-		gpio.write(4,gpio.LOW);
-		stopFlag = false;
-		c:send("ok\r\n");
+        spdTargetA=1023
+        spdTargetB=1023
+        gpio.write(3,gpio.LOW)
+        gpio.write(4,gpio.HIGH)
+        stopFlag = false;
+        c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="6" then --forward left
 		spdTargetA=1023
-		spdTargetB=128
+		spdTargetB=32
 		gpio.write(3,gpio.HIGH)
 		gpio.write(4,gpio.HIGH)
 		stopFlag = false;
 		c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="7" then --forward right
-		spdTargetA=128
+		spdTargetA=32
 		spdTargetB=1023
 		gpio.write(3,gpio.HIGH)
 		gpio.write(4,gpio.HIGH)
@@ -149,13 +149,13 @@ s:listen(9003,function(c)
 		c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="8" then --backward left
 		spdTargetA=1023
-		spdTargetB=128
+		spdTargetB=32
 		gpio.write(3,gpio.LOW)
 		gpio.write(4,gpio.LOW)
 		stopFlag = false;
 		c:send("ok\r\n");
 	  elseif string.sub(d,1,1)=="9" then --backward right
-		spdTargetA=128
+		spdTargetA=32
 		spdTargetB=1023
 		gpio.write(3,gpio.LOW)
 		gpio.write(4,gpio.LOW)
