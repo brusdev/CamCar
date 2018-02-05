@@ -14,38 +14,57 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Camera"
+        android:textOff="Camera"
+        android:textOn="Camera"
         android:id="@+id/camera_tb"
         android:layout_gravity="left|top" />
 
-    <Button
+    <ToggleButton
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Refresh"
-        android:id="@+id/refresh_tb"
+        android:text="Pitch"
+        android:textOff="Pitch"
+        android:textOn="Pitch"
+        android:checked="true"
+        android:id="@+id/turn_controller_tb"
         android:layout_gravity="center_horizontal|top" />
 
     <ToggleButton
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="Engine"
+        android:textOff="Engine"
+        android:textOn="Engine"
         android:id="@+id/engine_tb"
         android:layout_gravity="right|top" />
 
-    <android.support.design.widget.FloatingActionButton
-        android:id="@+id/backward_fab"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+    <io.github.controlwear.virtual.joystick.android.JoystickView
+        xmlns:custom="http://schemas.android.com/apk/res-auto"
+        android:id="@+id/leftJoystickView"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
         android:layout_gravity="center_vertical|left"
-        android:layout_margin="@dimen/fab_margin"
-        android:src="@drawable/ic_arrow_drop_down_white_24dp" />
+        custom:JV_enabled="false"
+        custom:JV_buttonColor="#FF6E40"
+        custom:JV_buttonSizeRatio="40%"
+        custom:JV_borderColor="#00796B"
+        custom:JV_backgroundSizeRatio="60%"
+        custom:JV_borderWidth="4dp"
+        custom:JV_buttonDirection="horizontal" />
 
-    <android.support.design.widget.FloatingActionButton
-        android:id="@+id/forward_fab"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+    <io.github.controlwear.virtual.joystick.android.JoystickView
+        xmlns:custom="http://schemas.android.com/apk/res-auto"
+        android:id="@+id/rightJoystickView"
+        android:layout_width="200dp"
+        android:layout_height="200dp"
         android:layout_gravity="center_vertical|right"
-        android:layout_margin="@dimen/fab_margin"
-        android:src="@drawable/ic_arrow_drop_up_white_24dp" />
+        custom:JV_buttonColor="#FF6E40"
+        custom:JV_buttonSizeRatio="40%"
+        custom:JV_borderColor="#00796B"
+        custom:JV_backgroundSizeRatio="60%"
+        custom:JV_borderWidth="4dp"
+        custom:JV_fixedCenter="false"
+        custom:JV_buttonDirection="vertical" />
 
     <TextView
         android:id="@+id/fullscreen_content"
@@ -54,6 +73,7 @@
         android:gravity="bottom|center_horizontal"
         android:keepScreenOn="true"
         android:text="@string/dummy_content"
+        android:textColor="@color/colorPrimary"
         android:textSize="30sp"
         android:textStyle="bold" />
 

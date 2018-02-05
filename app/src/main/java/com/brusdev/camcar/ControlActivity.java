@@ -12,32 +12,26 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.support.v7.app.ActionBar;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.v7.app.ActionBar;
+import android.support.v7.app.AppCompatActivity;
 import android.util.DisplayMetrics;
 import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
-import android.widget.Button;
 import android.widget.CompoundButton;
 import android.widget.TextView;
 import android.widget.ToggleButton;
 
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import java.util.concurrent.BlockingDeque;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
+import io.github.controlwear.virtual.joystick.android.JoystickView;
 import x1.Studio.Core.IVideoDataCallBack;
 import x1.Studio.Core.OnlineService;
 
@@ -64,12 +58,76 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
      * and a change of the status and navigation bar.
      */
     private static final int UI_ANIMATION_DELAY = 300;
-
-    private TextView mContentView;
-    private boolean mVisible;
-
-    private OnlineService ons;
+    private static final int DEVICE_PITCH = 1;
+    private static final int LEFT_JOYSTICK = 2;
+    private static final int RIGHT_JOYSTICK = 3;
+    private static final int MANUAL_JOYSTICK = 4;
     public static boolean isInitLan = false;
+    private final float[] mAccelerometerReading = new float[3];
+    private final float[] mMagnetometerReading = new float[3];
+    private final float[] mRotationMatrix = new float[9];
+    private final float[] mOrientationAngles = new float[3];
+    /**
+     * Touch listener to use for in-layout UI controls to delay hiding the
+     * system UI. This is to prevent the jarring behavior of controls going away
+     * while interacting with activity UI.
+     */
+    private final View.OnTouchListener mDelayHideTouchListener = new View.OnTouchListener() {
+        @Override
+        public boolean onTouch(View view, MotionEvent motionEvent) {
+            /*
+            if (AUTO_HIDE) {
+                delayedHide(AUTO_HIDE_DELAY_MILLIS);
+            }
+            return false;
+            */
+
+            return true;
+        }
+    };
+    private final Runnable mShowPart2Runnable = new Runnable() {
+        @Override
+        public void run() {
+            // Delayed display of UI elements
+            ActionBar actionBar = getSupportActionBar();
+            if (actionBar != null) {
+                actionBar.show();
+            }
+        }
+    };
+    private final Handler mHideHandler = new Handler();
+    private final Handler mCameraHandler = new Handler();
+    private JoystickView mLeftJoystick;
+    private JoystickView mRightJoystick;
+    private ToggleButton mTurnModeButton;
+    private ToggleButton mCameraButton;
+    private ToggleButton mEngineButton;
+    private TextView mContentView;
+    private final Runnable mHidePart2Runnable = new Runnable() {
+        @SuppressLint("InlinedApi")
+        @Override
+        public void run() {
+            // Delayed removal of status and navigation bar
+
+            // Note that some of these constants are new as of API 16 (Jelly Bean)
+            // and API 19 (KitKat). It is safe to use them, as they are inlined
+            // at compile-time and do nothing on earlier devices.
+            mContentView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+        }
+    };
+    private boolean mVisible;
+    private final Runnable mHideRunnable = new Runnable() {
+        @Override
+        public void run() {
+            hide();
+        }
+    };
+    private OnlineService ons;
     private Bitmap VideoBit;
     private boolean VideoInited = false;
     private Rect RectOfRegion;
@@ -81,41 +139,32 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private SurfaceHolder mSurfaceHolder;
     private DevInfo devInfo;
     private String callID;
-
-
-    private Thread thread;
-    private Socket tcSocket;
-    private byte[] tcBuffer;
-    private Charset charset;
-    private InputStream tcInputStream;
-    private OutputStream tcOutputStream;
-
-    private boolean stop;
-    private boolean enabled;
-    private boolean go_forward;
-    private boolean go_backward;
-    private boolean turn_left;
-    private boolean turn_right;
-    private Runnable stop_run;
-    private Runnable go_forward_run;
-    private Runnable go_forward_left;
-    private Runnable go_forward_right;
-    private Runnable go_backward_run;
-    private Runnable go_backward_left;
-    private Runnable go_backward_right;
-    private Runnable turn_left_run;
-    private Runnable turn_right_run;
-    private ThreadPoolExecutor threadPoolExecutor;
-    private BlockingDeque<Runnable> threadWorkQueue;
-
-
+    private final Runnable mCameraRunnable = new Runnable() {
+        @Override
+        public void run() {
+            callID = ons.callLanVideo(devInfo.getDevid(),
+                    devInfo.getHkid(), devInfo.getVideoType(),
+                    devInfo.getChannal(), 0);
+        }
+    };
     private SensorManager mSensorManager;
     private Sensor mASensor;
     private Sensor mMSensor;
-    private final float[] mAccelerometerReading = new float[3];
-    private final float[] mMagnetometerReading = new float[3];
-    private final float[] mRotationMatrix = new float[9];
-    private final float[] mOrientationAngles = new float[3];
+    private int mLeftJoystickAngle;
+    private int mLeftJoystickStrength;
+    private int mRightJoystickAngle;
+    private int mRightJoystickStrength;
+    private Thread mThread;
+    private Runnable update_ui_run;
+    private Handler mUIHandler;
+    private Charset mCharset;
+    private boolean mEnabled;
+    private Object mEnableSync;
+    private int mTurnMode;
+    private int mLeftDriverDirection;
+    private int mRightDriverDirection;
+    private int mLeftDriverValue;
+    private int mRightDriverValue;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -145,22 +194,39 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         mVisible = true;
         mContentView = (TextView) findViewById(R.id.fullscreen_content);
 
+        mLeftJoystickAngle = 0;
+        mLeftJoystickStrength = 0;
+        mRightJoystickAngle = 0;
+        mRightJoystickStrength = 0;
 
-        // Set up the user interaction to manually show or hide the system UI.
-        mContentView.setOnClickListener(new View.OnClickListener() {
+        mTurnMode = 0;
+        mEnabled = false;
+        mLeftDriverValue = 0;
+        mRightDriverValue = 0;
+
+
+        mLeftJoystick = (JoystickView) findViewById(R.id.leftJoystickView);
+        mLeftJoystick.setOnMoveListener(new JoystickView.OnMoveListener() {
             @Override
-            public void onClick(View view) {
-                toggle();
+            public void onMove(int angle, int strength) {
+                mLeftJoystickAngle = angle;
+                mLeftJoystickStrength = strength;
+                ControlActivity.this.updateEngine();
             }
         });
 
-        enabled = false;
+        mRightJoystick = (JoystickView) findViewById(R.id.rightJoystickView);
+        mRightJoystick.setOnMoveListener(new JoystickView.OnMoveListener() {
+            @Override
+            public void onMove(int angle, int strength) {
+                mRightJoystickAngle = angle;
+                mRightJoystickStrength = strength;
+                ControlActivity.this.updateEngine();
+            }
+        });
 
-        findViewById(R.id.forward_fab).setOnTouchListener(mDelayHideTouchListener);
-        findViewById(R.id.backward_fab).setOnTouchListener(mDelayHideTouchListener);
-
-        ((ToggleButton) findViewById(R.id.camera_tb)).
-                setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+        mCameraButton = ((ToggleButton) findViewById(R.id.camera_tb));
+        mCameraButton.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
                     public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                         if (callID != null) {
                             ons.closeLanVideo(callID);
@@ -169,232 +235,129 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                         }
 
                         if (isChecked) {
+                            System.out.println(ons.refreshLan());
+                            /*
                             callID = ons.callLanVideo(devInfo.getDevid(),
                                     devInfo.getHkid(), devInfo.getVideoType(),
                                     devInfo.getChannal(), 0);
+                                    */
                         }
                     }
                 });
 
-        ((Button) findViewById(R.id.refresh_tb)).setOnClickListener(new View.OnClickListener() {
+        mTurnModeButton = ((ToggleButton) findViewById(R.id.turn_controller_tb));
+        mTurnModeButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View v) {
-                System.out.println(ons.refreshLan());
+            public void onClick(View view) {
+                if (mTurnMode == DEVICE_PITCH) {
+                    setTurnMode(LEFT_JOYSTICK);
+                } else if (mTurnMode == LEFT_JOYSTICK) {
+                    setTurnMode(RIGHT_JOYSTICK);
+                } else if (mTurnMode == RIGHT_JOYSTICK) {
+                    setTurnMode(MANUAL_JOYSTICK);
+                } else {
+                    setTurnMode(DEVICE_PITCH);
+                }
             }
         });
 
-        ((ToggleButton) findViewById(R.id.engine_tb)).
-                setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-                    public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                        if (enabled && !isChecked) {
-                            threadPoolExecutor.execute(stop_run);
-                        }
+        mEngineButton = ((ToggleButton) findViewById(R.id.engine_tb));
+        mEngineButton.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton compoundButton, boolean isChecked) {
+                mEnabled = isChecked;
+                synchronized(mEnableSync){
+                    mEnableSync.notify();
+                }
+            }
+        });
 
-                        enabled = isChecked;
-                    }
-                });
+        setTurnMode(DEVICE_PITCH);
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         mASensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         mMSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
 
-        this.charset = Charset.forName("US-ASCII");
-        this.tcBuffer = new byte[128];
-
-        go_forward = false;
-        go_backward = false;
-        turn_left = false;
-        turn_right = false;
-
-        stop_run = new Runnable() {
+        this.mEnableSync = new Object();
+        this.mCharset = Charset.forName("US-ASCII");
+        mUIHandler = new Handler();
+        update_ui_run = new Runnable() {
             @Override
             public void run() {
-                try {
-                    sendCommand("0");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
+                mEngineButton.setChecked(mEnabled);
+                mContentView.setText(String.format("%d/%d", mLeftDriverDirection == 0 ? mLeftDriverValue : -mLeftDriverValue, mRightDriverDirection == 0 ? mRightDriverValue : -mRightDriverValue));
             }
         };
-        go_forward_run = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("1");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        go_forward_left = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("6");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        go_forward_right = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("7");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        go_backward_run = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("2");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        go_backward_left = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("8");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        go_backward_right = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("9");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        turn_left_run = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("3");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        turn_right_run = new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    sendCommand("4");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-                }
-            }
-        };
-        this.threadWorkQueue = new LinkedBlockingDeque<>();
-        this.threadPoolExecutor = new ThreadPoolExecutor(
-                1,
-                1,
-                1,
-                TimeUnit.SECONDS,
-                this.threadWorkQueue);
-
 
         this.start();
     }
 
-    private void start()
-    {
-        this.thread = new Thread(new Runnable() {
+    private void start() {
+        this.mThread = new Thread(new Runnable() {
             @Override
             public void run() {
                 ControlActivity.this.run();
             }
         });
 
-        this.thread.start();
+        this.mThread.start();
     }
 
-    private void run()
-    {
+    private void run() {
         try {
+            int errorCount = 0;
+            int targetPort = 309;
+            DatagramSocket socket = new DatagramSocket();
+            InetAddress targetAddress = InetAddress.getByName("192.168.10.9");
+
+            socket.setSoTimeout(1000);
+
+            byte[] message = new byte[1500];
+            DatagramPacket targetPacket = new DatagramPacket(message, message.length);
 
 
-            /*
-            this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    progress_label.setText("connecting...");
+            while (!this.isFinishing()) {
+                //Wait enable event.
+                synchronized(mEnableSync){
+                    this.mEnableSync.wait();
                 }
-            });
-            */
 
-            this.tcSocket = null;
+                while (!this.isFinishing() && this.mEnabled) {
+                    String command = String.format("SET,%d,%d,%d,%d", mLeftDriverValue,
+                            mRightDriverValue, mLeftDriverDirection, mRightDriverDirection);
+                    byte[] commandByte = command.getBytes(mCharset);
+                    DatagramPacket commandPacket = new DatagramPacket(commandByte,
+                            commandByte.length, targetAddress, targetPort);
+                    try {
+                        //Send update.
+                        socket.send(commandPacket);
 
-            while (this.tcSocket == null) {
-                try
-                {
-                    this.tcSocket = new Socket();
-                    this.tcSocket.setSoTimeout(3000);
+                        //Read status.
+                        socket.receive(targetPacket);
 
-                    this.tcSocket.connect(new InetSocketAddress(InetAddress.getByName("192.168.4.1"), 9003));
-                }
-                catch (Exception socketException) {
-                    socketException.printStackTrace();
+                        //Reset error count.
+                        errorCount = 0;
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        errorCount++;
 
-                    this.tcSocket = null;
+                        if (errorCount > 3) {
+                            this.mEnabled = false;
+                        }
+                    }
+
+                    //Check status changes.
+
+                    //Update UI.
+                    mUIHandler.removeCallbacks(update_ui_run);
+                    mUIHandler.post(update_ui_run);
+
+                    Thread.sleep(500);
                 }
             }
-
-            /*
-            this.runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    progress_view.setVisibility(View.GONE);
-                }
-            });
-            */
-
-
-            tcInputStream = this.tcSocket.getInputStream();
-            tcOutputStream = this.tcSocket.getOutputStream();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
             //runOnUiThread(new ToastRunnable(MainActivity.this, e.toString(), Toast.LENGTH_LONG));
-        }
-    }
-
-    private String sendCommand(String command) throws  Exception {
-
-        int readBytes;
-
-        synchronized (this.tcBuffer) {
-
-            tcOutputStream.write(command.getBytes(charset));
-
-            readBytes = tcInputStream.read(this.tcBuffer, 0, this.tcBuffer.length);
-
-            while(readBytes < 2 || this.tcBuffer[readBytes - 2] != '\r' || this.tcBuffer[readBytes - 1] != '\n') {
-
-                readBytes = readBytes + tcInputStream.read(this.tcBuffer, readBytes, this.tcBuffer.length - readBytes);
-            }
-
-            return new String(this.tcBuffer, 0, readBytes - 2, charset);
         }
     }
 
@@ -425,6 +388,10 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         mSensorManager.unregisterListener(this);
 
         this.finish();
+
+        synchronized(mEnableSync){
+            mEnableSync.notify();
+        }
     }
 
     @Override
@@ -458,62 +425,155 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
         // "mOrientationAngles" now has up-to-date information.
 
-        if (enabled) {
-            if (mOrientationAngles[1] > 0.15) {
-                if (!turn_left) {
-                    stop = false;
-                    turn_left = true;
-                    turn_right = false;
-                    updateEngine();
-                }
-            } else if (mOrientationAngles[1] < -0.15) {
-                if (!turn_right) {
-                    stop = false;
-                    turn_left = false;
-                    turn_right = true;
-                    updateEngine();
-                }
-            } else {
-                if (turn_left || turn_right) {
-                    stop = !go_forward && ! go_backward;
-                    turn_left = false;
-                    turn_right = false;
-                    updateEngine();
-                }
-            }
+        if (mTurnMode == DEVICE_PITCH) {
+            updateEngine();
+        }
+    }
+
+    private void setTurnMode(int mode) {
+        if (mode == DEVICE_PITCH) {
+            mTurnMode = DEVICE_PITCH;
+            mTurnModeButton.setTextOn("PITCH");
+            mLeftJoystick.setEnabled(false);
+            mRightJoystick.setEnabled(true);
+            mRightJoystick.setButtonDirection(1);
+        } else if (mode == LEFT_JOYSTICK) {
+            mTurnMode = LEFT_JOYSTICK;
+            mTurnModeButton.setTextOn("LEFT");
+            mLeftJoystick.setEnabled(true);
+            mLeftJoystick.setButtonDirection(-1);
+            mRightJoystick.setEnabled(true);
+            mRightJoystick.setButtonDirection(1);
+        } else if (mode == RIGHT_JOYSTICK) {
+            mTurnMode = RIGHT_JOYSTICK;
+            mTurnModeButton.setTextOn("RIGHT");
+            mLeftJoystick.setEnabled(false);
+            mRightJoystick.setEnabled(true);
+            mRightJoystick.setButtonDirection(0);
+        } else if (mode == MANUAL_JOYSTICK) {
+            mTurnMode = MANUAL_JOYSTICK;
+            mTurnModeButton.setTextOn("MANUAL");
+            mLeftJoystick.setEnabled(true);
+            mLeftJoystick.setButtonDirection(1);
+            mRightJoystick.setEnabled(true);
+            mRightJoystick.setButtonDirection(1);
         }
 
-
-        mSensorHandler.removeCallbacks(mSensorRunnable);
-        mSensorHandler.post(mSensorRunnable);
+        mTurnModeButton.setChecked(true);
     }
 
     private void updateEngine() {
-        if (go_forward) {
-            if (turn_left) {
-                threadPoolExecutor.execute(go_forward_left);
-            } else if (turn_right) {
-                threadPoolExecutor.execute(go_forward_right);
+
+        int levels = 3;
+        int turnLevel = 0;
+        int speedLevel = 0;
+        int maxValue = 1023;
+
+        if (mTurnMode == MANUAL_JOYSTICK) {
+            mLeftDriverValue = (mLeftJoystickStrength * levels / 100) * maxValue / levels;
+            mRightDriverValue = (mRightJoystickStrength * levels / 100) * maxValue / levels;
+
+            if (mLeftJoystickAngle >= 0 && mLeftJoystickAngle < 180) {
+                mLeftDriverDirection = 1;
             } else {
-                threadPoolExecutor.execute(go_forward_run);
+                mLeftDriverDirection = 0;
             }
-        } else if (go_backward) {
-            if (turn_left) {
-                threadPoolExecutor.execute(go_backward_left);
-            } else if (turn_right) {
-                threadPoolExecutor.execute(go_backward_right);
+
+            if (mRightJoystickAngle >= 0 && mRightJoystickAngle < 180) {
+                mRightDriverDirection = 1;
             } else {
-                threadPoolExecutor.execute(go_backward_run);
+                mRightDriverDirection = 0;
             }
+
         } else {
-            if (turn_left) {
-                threadPoolExecutor.execute(turn_left_run);
-            } else if (turn_right) {
-                threadPoolExecutor.execute(turn_right_run);
+            speedLevel = mRightJoystickStrength * levels / 100;
+
+            if (mRightJoystickAngle >= 180 && mRightJoystickAngle < 360) {
+                speedLevel = -speedLevel;
+            }
+
+            if (mTurnMode == DEVICE_PITCH) {
+                turnLevel = -(int) (mOrientationAngles[1] * (float) levels / 0.6);
+
+                if (turnLevel > levels) {
+                    turnLevel = levels;
+                } else if (turnLevel < -levels) {
+                    turnLevel = -levels;
+                }
+
+                if (speedLevel == 0 && turnLevel != 0) {
+                    speedLevel = Math.abs(turnLevel);
+
+                    if (turnLevel > 0) {
+                        turnLevel = levels;
+                    } else if (turnLevel < 0) {
+                        turnLevel = -levels;
+                    }
+                }
+            } else if (mTurnMode == LEFT_JOYSTICK) {
+                turnLevel = mLeftJoystickStrength * levels / 100;
+
+                if (mLeftJoystickAngle >= 90 && mLeftJoystickAngle < 270) {
+                    turnLevel = -turnLevel;
+                }
+
+                if (speedLevel == 0 && turnLevel != 0) {
+                    speedLevel = Math.abs(turnLevel);
+
+                    if (turnLevel > 0) {
+                        turnLevel = levels;
+                    } else if (turnLevel < 0) {
+                        turnLevel = -levels;
+                    }
+                }
             } else {
-                threadPoolExecutor.execute(stop_run);
+                if (mRightJoystickAngle >= 0 && mRightJoystickAngle < 90) {
+                    turnLevel = (90 - mRightJoystickAngle) * (levels + 1) / 90;
+                    if (turnLevel > levels) {
+                        turnLevel = levels;
+                    }
+                } else if (mRightJoystickAngle >= 90 && mRightJoystickAngle < 180) {
+                    turnLevel = (mRightJoystickAngle - 90) * (levels + 1) / 90;
+                    if (turnLevel > levels) {
+                        turnLevel = levels;
+                    }
+                    turnLevel = -turnLevel;
+                } else if (mRightJoystickAngle >= 180 && mRightJoystickAngle < 270) {
+                    turnLevel = (270 - mRightJoystickAngle) * (levels + 1) / 90;
+                    if (turnLevel > levels) {
+                        turnLevel = levels;
+                    }
+                    turnLevel = -turnLevel;
+                } else if (mRightJoystickAngle >= 270 && mRightJoystickAngle < 360) {
+                    turnLevel = (mRightJoystickAngle - 270) * (levels + 1) / 90;
+                    if (turnLevel > levels) {
+                        turnLevel = levels;
+                    }
+                }
+            }
+
+            if (speedLevel >= 0) {
+                mLeftDriverDirection = 1;
+                mRightDriverDirection = 1;
+            } else {
+                mLeftDriverDirection = 0;
+                mRightDriverDirection = 0;
+            }
+
+            if (turnLevel == 0) {
+                mLeftDriverValue = Math.abs(speedLevel) * maxValue / levels;
+                mRightDriverValue = Math.abs(speedLevel) * maxValue / levels;
+            } else if (turnLevel > 0) {
+                mLeftDriverValue = Math.abs(speedLevel) * maxValue / levels;
+                mRightDriverValue = Math.abs(speedLevel) * (levels - turnLevel) * maxValue / (levels * levels);
+            } else {
+                mLeftDriverValue = Math.abs(speedLevel) * (levels + turnLevel) * maxValue / (levels * levels);
+                mRightDriverValue = Math.abs(speedLevel) * maxValue / levels;
             }
         }
+
+        mUIHandler.removeCallbacks(update_ui_run);
+        mUIHandler.post(update_ui_run);
     }
 
     @Override
@@ -525,75 +585,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         // are available.
         delayedHide(100);
     }
-
-    /**
-     * Touch listener to use for in-layout UI controls to delay hiding the
-     * system UI. This is to prevent the jarring behavior of controls going away
-     * while interacting with activity UI.
-     */
-    private final View.OnTouchListener mDelayHideTouchListener = new View.OnTouchListener() {
-        @Override
-        public boolean onTouch(View view, MotionEvent motionEvent) {
-            switch (motionEvent.getAction()) {
-                case MotionEvent.ACTION_DOWN:
-                    if (view.getId() == R.id.backward_fab) {
-                        if (enabled && !go_backward) {
-                            stop = false;
-                            go_backward = true;
-                            go_forward = false;
-                            updateEngine();
-                        }
-                    }
-                    if (view.getId() == R.id.forward_fab) {
-                        if (enabled && !go_forward) {
-                            stop = false;
-                            go_backward = false;
-                            go_forward = true;
-                            updateEngine();
-                        }
-                    }
-
-                    // touch down code
-                    mSensorHandler.removeCallbacks(mSensorRunnable);
-                    mSensorHandler.post(mSensorRunnable);
-                    break;
-
-                case MotionEvent.ACTION_MOVE:
-                    // touch move code
-                    break;
-
-                case MotionEvent.ACTION_UP:
-                    if (view.getId() == R.id.backward_fab) {
-                        if (enabled && go_backward) {
-                            stop = !go_forward && !turn_left && !turn_right;
-                            go_backward = false;
-                            updateEngine();
-                        }
-                    }
-                    if (view.getId() == R.id.forward_fab) {
-                        if (enabled && go_forward) {
-                            stop = !go_backward && !turn_left && !turn_right;
-                            go_forward = false;
-                            updateEngine();
-                        }
-                    }
-
-                    // touch up code
-                    mSensorHandler.removeCallbacks(mSensorRunnable);
-                    mSensorHandler.post(mSensorRunnable);
-                    break;
-            }
-
-            /*
-            if (AUTO_HIDE) {
-                delayedHide(AUTO_HIDE_DELAY_MILLIS);
-            }
-            return false;
-            */
-
-            return true;
-        }
-    };
 
     private void toggle() {
         if (mVisible) {
@@ -616,24 +607,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         mHideHandler.postDelayed(mHidePart2Runnable, UI_ANIMATION_DELAY);
     }
 
-    private final Runnable mHidePart2Runnable = new Runnable() {
-        @SuppressLint("InlinedApi")
-        @Override
-        public void run() {
-            // Delayed removal of status and navigation bar
-
-            // Note that some of these constants are new as of API 16 (Jelly Bean)
-            // and API 19 (KitKat). It is safe to use them, as they are inlined
-            // at compile-time and do nothing on earlier devices.
-            mContentView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
-                    | View.SYSTEM_UI_FLAG_FULLSCREEN
-                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
-        }
-    };
-
     @SuppressLint("InlinedApi")
     private void show() {
         // Show the system bar
@@ -645,37 +618,6 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         mHideHandler.removeCallbacks(mHidePart2Runnable);
         mHideHandler.postDelayed(mShowPart2Runnable, UI_ANIMATION_DELAY);
     }
-
-    private final Runnable mShowPart2Runnable = new Runnable() {
-        @Override
-        public void run() {
-            // Delayed display of UI elements
-            ActionBar actionBar = getSupportActionBar();
-            if (actionBar != null) {
-                actionBar.show();
-            }
-        }
-    };
-
-    private final Handler mHideHandler = new Handler();
-    private final Runnable mHideRunnable = new Runnable() {
-        @Override
-        public void run() {
-            hide();
-        }
-    };
-
-    private final Handler mSensorHandler = new Handler();
-    private final Runnable mSensorRunnable = new Runnable() {
-        @Override
-        public void run() {
-            if (callID != null) {
-                mContentView.setText(String.format("%d/%s - %.02f", devInfo.getHkid(), callID, mOrientationAngles[1]));
-            } else {
-                mContentView.setText(String.format("%d - %.02f", devInfo.getHkid(), mOrientationAngles[1]));
-            }
-        }
-    };
 
     /**
      * Schedules a call to hide() in [delay] milliseconds, canceling any
@@ -758,6 +700,8 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         devInfo.setAudioType(audioType);
         devInfo.setType(0);
 
+        mCameraHandler.removeCallbacks(mCameraRunnable);
+        mCameraHandler.postDelayed(mCameraRunnable, 500);
     }
 
     @Override
