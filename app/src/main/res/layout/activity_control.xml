@@ -70,9 +70,38 @@
         android:id="@+id/fullscreen_content"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:gravity="center"
+        android:keepScreenOn="true"
+        android:textColor="@color/colorPrimary"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/left_speed_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="bottom|left"
+        android:keepScreenOn="true"
+        android:textColor="@color/colorPrimary"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/distance_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:gravity="bottom|center_horizontal"
         android:keepScreenOn="true"
-        android:text="@string/dummy_content"
+        android:textColor="@color/colorPrimary"
+        android:textSize="30sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/right_speed_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="bottom|right"
+        android:keepScreenOn="true"
         android:textColor="@color/colorPrimary"
         android:textSize="30sp"
         android:textStyle="bold" />

@@ -2,6 +2,7 @@ timeout = 0
 
 function load()
 
+
 print("Init gpio")
 
 --Init led gpio
@@ -20,6 +21,18 @@ pwm.setup(1,1000,1023);
 pwm.start(1);pwm.setduty(1,0);
 pwm.setup(2,1000,1023);
 pwm.start(2);pwm.setduty(2,0);
+
+
+print("Init distance sensor")
+dofile("hcsr04.lua")
+distance_sensor = hcsr04.create(5, 6, 200)
+
+
+print("Init speed sensors")
+dofile("lm393.lua")
+left_speed_sensor = lm393.create(7, 10)
+right_speed_sensor = lm393.create(8, 10)
+
 
 print("Init wifi")
 
@@ -91,7 +104,7 @@ function onSrvReceive(srv, data, port, ip)
         pwm.setduty(1, lpwm)
         pwm.setduty(2, rpwm)
 
-        srv:send(port, ip, "STA,1")
+        srv:send(port, ip, "STA," .. distance_sensor.getDistance() .. "," .. left_speed_sensor.getSpeed() .. "," .. right_speed_sensor.getSpeed())
     elseif cmd=="OUT" then
         --OUT:3,0
         pin = tonumber(string.sub(arg, 1, 1))

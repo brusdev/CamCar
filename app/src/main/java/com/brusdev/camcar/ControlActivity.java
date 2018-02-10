@@ -103,6 +103,9 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private ToggleButton mCameraButton;
     private ToggleButton mEngineButton;
     private TextView mContentView;
+    private TextView mLeftSpeedTextView;
+    private TextView mDistanceTextView;
+    private TextView mRightSpeedTextView;
     private final Runnable mHidePart2Runnable = new Runnable() {
         @SuppressLint("InlinedApi")
         @Override
@@ -161,6 +164,9 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
     private boolean mEnabled;
     private Object mEnableSync;
     private int mTurnMode;
+    private int mDistance;
+    private int mLeftSpeed;
+    private int mRightSpeed;
     private int mLeftDriverDirection;
     private int mRightDriverDirection;
     private int mLeftDriverValue;
@@ -193,6 +199,9 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
         mVisible = true;
         mContentView = (TextView) findViewById(R.id.fullscreen_content);
+        mLeftSpeedTextView = (TextView) findViewById(R.id.left_speed_text);
+        mDistanceTextView = (TextView) findViewById(R.id.distance_text);
+        mRightSpeedTextView = (TextView) findViewById(R.id.right_speed_text);
 
         mLeftJoystickAngle = 0;
         mLeftJoystickStrength = 0;
@@ -203,6 +212,9 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
         mEnabled = false;
         mLeftDriverValue = 0;
         mRightDriverValue = 0;
+        mDistance = 0;
+        mLeftSpeed = 0;
+        mRightSpeed = 0;
 
 
         mLeftJoystick = (JoystickView) findViewById(R.id.leftJoystickView);
@@ -286,6 +298,9 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
             public void run() {
                 mEngineButton.setChecked(mEnabled);
                 mContentView.setText(String.format("%d/%d", mLeftDriverDirection == 0 ? mLeftDriverValue : -mLeftDriverValue, mRightDriverDirection == 0 ? mRightDriverValue : -mRightDriverValue));
+                mDistanceTextView.setText(String.format("%d", mDistance));
+                mLeftSpeedTextView.setText(String.format("%d", mLeftSpeed));
+                mRightSpeedTextView.setText(String.format("%d", mRightSpeed));
             }
         };
 
@@ -335,6 +350,13 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
                         //Read status.
                         socket.receive(targetPacket);
 
+                        String status = new String(targetPacket.getData(), 0, targetPacket.getLength(), mCharset);
+                        String[] statusTokens = status.split(",");
+
+                        mDistance = Integer.parseInt(statusTokens[1]);
+                        mLeftSpeed = Integer.parseInt(statusTokens[2]);
+                        mRightSpeed = Integer.parseInt(statusTokens[3]);
+
                         //Reset error count.
                         errorCount = 0;
                     } catch (Exception e) {
@@ -343,6 +365,9 @@ public class ControlActivity extends AppCompatActivity implements SensorEventLis
 
                         if (errorCount > 3) {
                             this.mEnabled = false;
+                            mDistance = 0;
+                            mLeftSpeed = 0;
+                            mRightSpeed = 0;
                         }
                     }
 
